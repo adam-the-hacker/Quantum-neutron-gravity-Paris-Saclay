@@ -358,3 +358,82 @@ def maj(n):
 ani = FuncAnimation(fig, maj, frames=range(0, len(t_anim), saut), interval=50)
 plt.show()
 
+
+##############################################################################
+#        PARTIE IV : REBONDS QUANTIQUES DE NEUTRONS (section 7 du projet)
+##############################################################################
+# Unités naturelles : L* = (hbar²/(m² g))^(1/3), E* = m g L*, T* = hbar/E*.
+# L'équation devient  i dpsi/dt = -1/2 psi'' + z psi   (V = z pour z > 0, g = 1),
+# avec psi(0,t) = 0 (miroir) et psi(D,t) = 0 (D grand, remplace +infini).
+#
+#%% 13. Question 2 : le paquet d'onde initial
+############################################
+# Gaussienne  psi0 = C exp(-(z-z0)²/(2 d²))
+# Normalisation : <psi0|psi0> = C² ∫ exp(-(z-z0)²/d²) dz = C² d sqrt(pi) = 1
+#   => C = pi^(-1/4) d^(-1/2)          (domaine ]-inf, +inf[, paquet loin des bords)
+z0 = 10.0                   # hauteur initiale (0 << z0 << D)
+d = 1.0                     # largeur (d <~ 1 pour localiser, pas trop petit : résolution)
+D = 40.0                    # hauteur du domaine (plusieurs dizaines)
+C = np.pi**(-0.25) / np.sqrt(d)
+ 
+def psi0_neutron(z):
+    return C * np.exp(-(z - z0)**2 / (2 * d**2))
+ 
+# vérifications numériques sur un maillage fin
+z_t = np.linspace(0, D, 4001)
+dz_t = z_t[1] - z_t[0]
+p0 = psi0_neutron(z_t).astype(complex)
+norme0 = np.sum(np.abs(p0)**2) * dz_t
+z_moy0 = np.sum(z_t * np.abs(p0)**2) * dz_t
+# vitesse moyenne initiale  U0 = <psi0|p|psi0> = ∫ conj(psi0) (-i dpsi0/dz) dz
+U0 = np.real(np.sum(np.conj(p0) * (-1j) * np.gradient(p0, dz_t)) * dz_t)
+# (psi0 est réelle : U0 = -i [psi0²/2] = 0 exactement => la particule part du repos)
+ 
+# temps de chute de z0 jusqu'au sol avec g = 1 :  z0 = t²/2  =>  t = sqrt(2 z0)
+t_chute = np.sqrt(2 * z0)
+n_rebonds = 3
+T_n = n_rebonds * 2 * t_chute          # une période de rebond = 2 * t_chute
+ 
+print("Question 2 : paquet d'onde initial")
+print(f"  C = pi^(-1/4) d^(-1/2) = {C:.5f}   -> norme numérique = {norme0:.6f}")
+print(f"  <z>(0) = {z_moy0:.4f} (z0 = {z0}),  psi0(0) = {psi0_neutron(np.array([0.0]))[0]:.1e},"
+      f"  psi0(D) = {psi0_neutron(np.array([D]))[0]:.1e}")
+print(f"  U0 = <psi0|p|psi0> = {U0:.1e}  (= 0 : départ du repos)")
+print(f"  temps de chute = sqrt(2 z0) = {t_chute:.3f} ;  durée T = {n_rebonds} périodes = {T_n:.2f}")
+ 
+fig, ax = plt.subplots(figsize=(4.5, 6))
+ax.plot(np.abs(p0)**2, z_t, 'b', label=r'$|\psi_0|^2$')
+ax.plot(z_t / D * np.max(np.abs(p0)**2), z_t, 'k--', lw=.8, label='V(z) = z (échelle réduite)')
+ax.axhline(0, color='brown', lw=3)                    # miroir en z = 0
+ax.set_ylim(-1, D); ax.set_xlabel(r'$|\psi_0|^2$'); ax.set_ylabel('z'); ax.grid(alpha=.3)
+ax.set_title(f'Paquet initial : z0 = {z0}, d = {d}'); ax.legend()
+plt.show()
+ 
+#%% 14. Question 3 : simulation instationnaire (schéma implicite)
+#################################################################
+# Choix de M : la vitesse maximale à l'impact est sqrt(2 z0) = 4.5, donc la plus petite
+#   longueur d'onde est 2 pi/4.5 = 1.4 ; avec dz = D/M = 0.05 on a ~ 28 points par
+#   longueur d'onde, et 20 points dans la largeur d du paquet.
+# Choix de N : dt = T/N = 0.0045 (Crank-Nicolson reste stable, N fixé par la précision).
+M_n = 800
+N_n = 6000
+ 
+t0 = time.time()
+z, t_n, psi_n = evolution_implicite(0.0, D, M_n, N_n, T_n, V_gravite, psi0_neutron)
+duree = time.time() - t0
+dz = z[1] - z[0]
+rho_n = np.abs(psi_n)**2
+norme_n = np.sum(rho_n, axis=0) * dz
+ 
+print("\nQuestion 3 : simulation (implicite)")
+print(f"  M = {M_n} (dz = {dz:.3f}), N = {N_n} (dt = {T_n/N_n:.4f}), T = {T_n:.2f}, {duree:.1f} s")
+print(f"  norme min / max = {norme_n.min():.6f} / {norme_n.max():.6f}")
+print(f"  |psi| max sur les bords : {np.abs(psi_n[[0, -1], :]).max():.1e}  "
+      f"(plus grand |psi| dans la dernière maille : {np.abs(psi_n[-2, :]).max():.1e})")
+ 
+# diagramme espace-temps de |psi|² (aperçu rapide ; l'animation est la question 4)
+plt.figure(figsize=(9, 4.5))
+plt.imshow(rho_n, origin='lower', aspect='auto', extent=[0, T_n, 0, D], cmap='viridis', vmax=0.6)
+plt.ylim(0, 20); plt.xlabel('t'); plt.ylabel('z'); plt.colorbar(label=r'$|\psi|^2$')
+plt.title('Neutron en chute libre avec rebonds sur le miroir')
+plt.show()
