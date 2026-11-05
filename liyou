@@ -173,7 +173,7 @@ ax[1].set_title('Densités de probabilité')
 plt.show()
 
 ##############################################################################
-#  PARTIE III : EVOLUTION TEMPORELLE (EXPLICITE RK4 / IMPLICITE CN / SEMI-IMPLICITE)
+#  PARTIE II : EVOLUTION TEMPORELLE (EXPLICITE RK4 / IMPLICITE CN / SEMI-IMPLICITE)
 ##############################################################################
 #%% 8. Solveurs instationnaires : EXPLICITE, IMPLICITE et SEMI-IMPLICITE
 ########################################################################
