@@ -6,8 +6,7 @@
 # Conditions de Dirichlet : psi = 0 aux deux bords du domaine [a,b].
 #
 #   PARTIE I   : états propres (7 potentiels dont puits fini, oscillateur, Morse, ...)
-#   PARTIE II  : effet tunnel stationnaire (double puits)
-#   PARTIE III : évolution temporelle, schémas EXPLICITE (RK4), IMPLICITE (Crank-Nicolson)
+#   PARTIE II  : évolution temporelle, schémas EXPLICITE (RK4), IMPLICITE (Crank-Nicolson)
 #                et SEMI-IMPLICITE (comme DF3), validation sur le puits infini (cas 6.1.1)
 
 import time
