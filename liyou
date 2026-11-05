@@ -360,25 +360,12 @@ def psi_exacte(x, t):
 norme_e = np.sum(np.abs(psi_e)**2, axis=0) * dx
 norme_i = np.sum(np.abs(psi_i)**2, axis=0) * dx
 norme_s = np.sum(np.abs(psi_s)**2, axis=0) * dx
-err_e = np.max(np.abs(psi_e - psi_exacte(x, t_e)), axis=0)   # erreur max sur x à chaque t
-err_i = np.max(np.abs(psi_i - psi_exacte(x, t_i)), axis=0)
-err_s = np.max(np.abs(psi_s - psi_exacte(x, t_s)), axis=0)
 
 # pour comparer explicite et implicite, on prend l'explicite aux instants de l'implicite
 pas = N_expl // N_impl
 ecart_ei = np.max(np.abs(psi_e[:, ::pas] - psi_i))
 ecart_si = np.max(np.abs(psi_s - psi_i))
 
-print("Cas 6.1.1 : puits infini, M = 100, T = 1")
-print(f"  explicite (RK4, N={N_expl}, dt={T/N_expl:.0e}) : {duree_e:.2f} s, "
-      f"norme in [{norme_e.min():.6f}, {norme_e.max():.6f}], erreur max / exact = {err_e.max():.2e}")
-print(f"  implicite (CN,  N={N_impl}, dt={T/N_impl:.0e}) : {duree_i:.2f} s, "
-      f"norme in [{norme_i.min():.6f}, {norme_i.max():.6f}], erreur max / exact = {err_i.max():.2e}")
-print(f"  semi-impl (DF3, N={N_semi}, dt={T/N_semi:.0e}) : {duree_s:.2f} s, "
-      f"norme in [{norme_s.min():.6f}, {norme_s.max():.6f}], erreur max / exact = {err_s.max():.2e}")
-print(f"  écart max explicite - implicite      : {ecart_ei:.2e}")
-print(f"  écart max semi-implicite - implicite : {ecart_si:.2e}"
-      f"   (V = 0 => NL = 0 : mêmes équations que Crank-Nicolson)")
 
 fig, ax = plt.subplots(1, 2, figsize=(13, 4.5))
 n_e, n_i, n_s = N_expl // 4, N_impl // 4, N_semi // 4        # instant t = T/4
@@ -387,11 +374,6 @@ ax[0].plot(x, np.real(psi_e[:, n_e]), 'k--', label='explicite RK4')
 ax[0].plot(x, np.real(psi_i[:, n_i]), 'b:', label='implicite CN')
 ax[0].plot(x, np.real(psi_s[:, n_s]), 'g.', ms=4, label='semi-implicite DF3')
 ax[0].set_title(f'Re psi à t = {t_i[n_i]:.2f}'); ax[0].set_xlabel('x'); ax[0].grid(); ax[0].legend()
-ax[1].semilogy(t_e[1:], err_e[1:], label='explicite RK4')
-ax[1].semilogy(t_i[1:], err_i[1:], label='implicite CN')
-ax[1].semilogy(t_s[1:], err_s[1:], 'g--', label='semi-implicite DF3')
-ax[1].set_title('Erreur max par rapport à la solution exacte'); ax[1].set_xlabel('t')
-ax[1].grid(); ax[1].legend()
 plt.show()
 
 #%% 11. Animation du paquet d'onde (corde de guitare tenue par les bords)
@@ -416,16 +398,3 @@ def maj(n):
 ani = FuncAnimation(fig, maj, frames=range(0, len(t_anim), saut), interval=50)
 plt.show()
 
-#%% 12. (Optionnel) Tout tester d'un coup
-########################################
-print("\n=== Cas stationnaires ===")
-for nom, c_ in cas.items():
-    xx, EE, _ = etats_propres(c_['a'], c_['b'], c_['M'], c_['V'], c_['nb'])
-    if c_['E_ex'] is not None:
-        Eex = c_['E_ex'](c_['nb'])
-        err = np.max(np.abs(EE[:len(Eex)] - Eex) / np.abs(Eex))
-        print(f"{nom:14s} E0 = {EE[0]:9.5f}   erreur relative max = {err:.1e}")
-    else:
-        print(f"{nom:14s} E0 = {EE[0]:9.5f}   E1 = {EE[1]:9.5f}   (pas de solution exacte)")
-
-print("\n=== Cas instationnaire 6.1.1 : voir la cellule 10 ===")
