@@ -1,1 +1,431 @@
+#%% 1. ENTREES ET LIBRAIRIES
+############################
+# Equation de Schrödinger adimensionnée (hbar = m = 1) par différences finies :
+#       E phi = -1/2 phi'' + V phi            (stationnaire)
+#       i dpsi/dt = -1/2 psi'' + V psi        (instationnaire : RK4 explicite / CN implicite / semi-implicite DF3)
+# Conditions de Dirichlet : psi = 0 aux deux bords du domaine [a,b].
+#
+#   PARTIE I   : états propres (7 potentiels dont puits fini, oscillateur, Morse, ...)
+#   PARTIE II  : effet tunnel stationnaire (double puits)
+#   PARTIE III : évolution temporelle, schémas EXPLICITE (RK4), IMPLICITE (Crank-Nicolson)
+#                et SEMI-IMPLICITE (comme DF3), validation sur le puits infini (cas 6.1.1)
 
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from scipy.linalg import eigh
+from scipy.optimize import brentq
+
+##############################################################################
+#                     PARTIE I : PROBLEME STATIONNAIRE
+##############################################################################
+#%% 2. Solveur stationnaire (identique pour tous les potentiels)
+#############################################################
+def etats_propres(a, b, M, Vdef, nb):
+    """Renvoie x (M+1 points), E (nb premières énergies), phi (M+1, nb)."""
+    dx = (b - a) / M
+    c = 1 / dx**2
+    x = np.linspace(a, b, M + 1)
+    V = Vdef(x)
+
+    # matrice H sur les M-1 points intérieurs (bords : phi = 0)
+    n = M - 1
+    H = np.zeros([n, n])
+    for k in range(n):
+        H[k, k] = c + V[k + 1]
+        if k > 0:
+            H[k, k - 1] = -c / 2
+        if k < n - 1:
+            H[k, k + 1] = -c / 2
+
+    # H est symétrique réelle : eigh renvoie déjà les valeurs triées
+    E, phi_int = eigh(H)
+    E = E[:nb]
+
+    phi = np.zeros([M + 1, nb])
+    phi[1:M, :] = phi_int[:, :nb]
+    for k in range(nb):
+        phi[:, k] /= np.sqrt(np.sum(phi[:, k]**2) * dx)       # normalisation
+        i0 = np.argmax(np.abs(phi[:, k]) > 1e-3 * np.abs(phi[:, k]).max())
+        if phi[i0, k] < 0:                                    # signe
+            phi[:, k] *= -1
+    return x, E, phi
+
+#%% 3. Les potentiels
+####################
+# --- 3.1 puits infini  (domaine [0,1])
+def V_puits_infini(x):
+    return np.zeros_like(x)
+
+# --- 3.2 oscillateur harmonique  V = x²/2     (E_n = n + 1/2)
+def V_oscillateur(x):
+    return 0.5 * x**2
+
+# --- 3.3 puits fini : V = 0 pour |x|<1, V0 ailleurs
+V0_puits, demi_largeur = 10.0, 1.0
+def V_puits_fini(x):
+    V = np.where(np.abs(x) < demi_largeur, 0.0, V0_puits)
+    # sur les points qui tombent exactement sur la marche : valeur moyenne
+    # (meilleure précision pour un potentiel discontinu)
+    V[np.isclose(np.abs(x), demi_largeur)] = V0_puits / 2
+    return V
+
+# --- 3.4 double puits  V = (x²-4)²/8   (deux minima en x = ±2, barrière = 2)
+def V_double_puits(x):
+    return (x**2 - 4)**2 / 8
+
+# --- 3.5 puits de Pöschl-Teller  V = -l(l+1)/(2 cosh²x),  l=3
+#         E_n = -(l-n)²/2  pour n = 0,1,2
+lam = 3
+def V_poschl_teller(x):
+    return -lam * (lam + 1) / (2 * np.cosh(x)**2)
+
+# --- 3.6 potentiel de Morse  V = D (1 - exp(-alpha x))²   (vibration moléculaire)
+D_morse, alpha = 8.0, 1.0
+def V_morse(x):
+    return D_morse * (1 - np.exp(-alpha * x))**2
+
+# --- 3.7 neutron dans le champ de gravité  V = z  (mur en z=0)
+def V_gravite(x):
+    return x.copy()
+
+#%% 4. Solutions exactes (pour vérifier ; None si on ne les connaît pas)
+#######################################################################
+def E_exact_puits_fini(nb):
+    # k = sqrt(2E), kappa = sqrt(2(V0-E)), demi-largeur l
+    #   pair   : kappa = k tan(k l)      impair : kappa = -k cot(k l)
+    l = demi_largeur
+    def f_pair(E):
+        k, ka = np.sqrt(2 * E), np.sqrt(2 * (V0_puits - E))
+        return ka - k * np.tan(k * l)
+    def f_impair(E):
+        k, ka = np.sqrt(2 * E), np.sqrt(2 * (V0_puits - E))
+        return ka + k / np.tan(k * l)
+    Eg = np.linspace(1e-6, V0_puits - 1e-6, 20000)
+    racines = []
+    for f in (f_pair, f_impair):
+        v = f(Eg)
+        for i in range(len(Eg) - 1):
+            if v[i] * v[i + 1] < 0 and abs(v[i]) < 50 and abs(v[i + 1]) < 50:
+                racines.append(brentq(f, Eg[i], Eg[i + 1]))
+    return np.sort(racines)[:nb]
+
+# zéros de la fonction d'Airy : E_n = |a_n| / 2^(1/3)
+airy = np.array([2.33811, 4.08795, 5.52056, 6.78671, 7.94413, 9.02265])
+
+#%% 5. Paramètres de chaque cas : domaine [a,b], M, nb, potentiel, exact
+########################################################################
+cas = {
+    'puits_infini': dict(a=0,   b=1,   M=300, nb=4, V=V_puits_infini,
+                         E_ex=lambda nb: (np.arange(1, nb + 1) * np.pi)**2 / 2),
+    'oscillateur':  dict(a=-8,  b=8,   M=800, nb=5, V=V_oscillateur,
+                         E_ex=lambda nb: np.arange(nb) + 0.5),
+    'puits_fini':   dict(a=-6,  b=6,   M=1200, nb=4, V=V_puits_fini,
+                         E_ex=E_exact_puits_fini),
+    'double_puits': dict(a=-6,  b=6,   M=800, nb=6, V=V_double_puits,
+                         E_ex=None),
+    'poschl_teller':dict(a=-15, b=15,  M=1500, nb=3, V=V_poschl_teller,
+                         E_ex=lambda nb: -(lam - np.arange(nb))**2 / 2),
+    'morse':        dict(a=-2,  b=10,  M=1200, nb=4, V=V_morse,
+                         E_ex=lambda nb: (lambda w, n: w * (n + .5)
+                                          - (w * (n + .5))**2 / (4 * D_morse))
+                                         (alpha * np.sqrt(2 * D_morse), np.arange(nb))),
+    'gravite':      dict(a=0,   b=30,  M=600, nb=5, V=V_gravite,
+                         E_ex=lambda nb: airy[:nb] / 2**(1 / 3)),
+}
+
+#%% 6. Choisir un cas stationnaire, résoudre, comparer, tracer
+#############################################################
+choix = 'double_puits'      # <-- changer ici : voir les clés du dictionnaire `cas`
+
+p = cas[choix]
+x, E, phi = etats_propres(p['a'], p['b'], p['M'], p['V'], p['nb'])
+V = p['V'](x)
+
+print(f"Cas : {choix}")
+if p['E_ex'] is not None:
+    E_ex = p['E_ex'](p['nb'])
+    print(" n   E numérique   E exacte    erreur relative")
+    for k in range(len(E_ex)):
+        print(f" {k}  {E[k]:11.5f}  {E_ex[k]:11.5f}   {abs(E[k]-E_ex[k])/abs(E_ex[k]):.2e}")
+else:
+    print(" n   E numérique")
+    for k in range(p['nb']):
+        print(f" {k}  {E[k]:11.5f}")
+
+nb = p['nb']
+amp = 0.8 * np.min(np.diff(E)) / np.abs(phi).max()    # amplitude d'affichage
+
+fig, ax = plt.subplots(1, 2, figsize=(13, 5))
+ax[0].plot(x, V, 'k', lw=2, label='V(x)')
+for k in range(nb):
+    ax[0].axhline(E[k], color='gray', ls=':', lw=.8)
+    ax[0].plot(x, E[k] + amp * phi[:, k], label=f'n={k}, E={E[k]:.3f}')
+ax[0].set_ylim(V.min() - 0.5, E[-1] + 1.5 * np.min(np.diff(E)))
+ax[0].set_xlabel('x'); ax[0].set_ylabel('E'); ax[0].grid(); ax[0].legend(fontsize=8)
+ax[0].set_title(f'{choix} : niveaux et fonctions propres')
+
+for k in range(nb):
+    ax[1].plot(x, phi[:, k]**2, label=f'n={k}')
+ax[1].set_xlabel('x'); ax[1].set_ylabel(r'$|\phi_n|^2$'); ax[1].grid(); ax[1].legend()
+ax[1].set_title('Densités de probabilité')
+plt.show()
+
+##############################################################################
+#  PARTIE III : EVOLUTION TEMPORELLE (EXPLICITE RK4 / IMPLICITE CN / SEMI-IMPLICITE)
+##############################################################################
+#%% 8. Solveurs instationnaires : EXPLICITE, IMPLICITE et SEMI-IMPLICITE
+########################################################################
+# i dpsi/dt = H psi   <=>   dpsi/dt = -i H psi ,   H = -1/2 d²/dx² + V(x,t)
+# Différences finies centrées en espace, psi = 0 aux bords (Dirichlet).
+# Les tableaux d'onde sont COMPLEXES. Toutes les étapes de temps sont enregistrées.
+#
+# --- EXPLICITE : Runge-Kutta 4.  Marche pour tout potentiel V(x,t), mais
+#     n'est stable que si dt * (2/dx² + V_max) < ~2.8  => dt très petit.
+# --- IMPLICITE : Crank-Nicolson, (I + i dt/2 H) psi^{n+1} = (I - i dt/2 H) psi^n
+#     Inconditionnellement stable et conserve la norme, mais V(x) doit être
+#     STATIONNAIRE (sinon la matrice change à chaque pas).
+# --- SEMI-IMPLICITE (comme Lorenz / Burgers dans DF3) : dpsi/dt = L psi + NL avec
+#       L psi = (i/2) d²psi/dx²  : terme linéaire (cinétique)  -> Crank-Nicolson
+#       NL    = -i V psi         : terme potentiel             -> Euler explicite
+#     Og psi^{n+1} = Od psi^n + dt NL^n
+#     avec r = i dt/(4 dx²),  Og = tridiag[-r, 1+2r, -r],  Od = tridiag[r, 1-2r, r].
+#     Og est constante : on ne la construit qu'une fois.
+#     Si V = 0 (puits infini), NL = 0 et le schéma coïncide avec Crank-Nicolson.
+#     Attention : |1 - i V dt| > 1 : la norme croît si V est grand (il faut V_max² dt T << 1).
+
+def evolution_explicite(a, b, M, N, T, Vdef, psi0def, V_instationnaire=False):
+    """RK4. Vdef(x) si stationnaire, Vdef(x,t) si V_instationnaire=True.
+    Renvoie x (M+1), t (N+1), psi (M+1, N+1)."""
+    dx = (b - a) / M
+    dt = T / N
+    x = np.linspace(a, b, M + 1)
+    t = np.linspace(0, T, N + 1)
+    V = None if V_instationnaire else Vdef(x)
+
+    # condition de stabilité de RK4
+    V_max = np.max(np.abs(Vdef(x, 0.0) if V_instationnaire else V))
+    if dt * (2 / dx**2 + V_max) > 2.8:
+        print(f"ATTENTION : dt*(2/dx²+Vmax) = {dt*(2/dx**2+V_max):.2f} > 2.8 : "
+              f"schéma explicite instable, augmenter N")
+
+    def F(u, tt):                      # F = -i H u  (points intérieurs seulement)
+        Vt = Vdef(x, tt) if V_instationnaire else V
+        out = np.zeros_like(u)
+        out[1:M] = -1j * (-0.5 * (u[0:M - 1] - 2 * u[1:M] + u[2:M + 1]) / dx**2
+                          + Vt[1:M] * u[1:M])
+        return out
+
+    psi = np.asarray(psi0def(x), dtype=complex).copy()
+    psi[0] = psi[M] = 0
+    psi_num = np.zeros([M + 1, N + 1], dtype=complex)
+    psi_num[:, 0] = psi
+
+    for n in range(N):
+        tn = t[n]
+        k1 = F(psi, tn)
+        k2 = F(psi + 0.5 * dt * k1, tn + 0.5 * dt)
+        k3 = F(psi + 0.5 * dt * k2, tn + 0.5 * dt)
+        k4 = F(psi + dt * k3, tn + dt)
+        psi = psi + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        psi_num[:, n + 1] = psi
+        if np.max(np.abs(psi)) > 1e6:
+            print(f"Instabilité numérique : boum au pas {n}")
+            break
+    return x, t, psi_num
+
+
+def evolution_implicite(a, b, M, N, T, Vdef, psi0def):
+    """Crank-Nicolson, V(x) stationnaire. Même sortie que evolution_explicite."""
+    dx = (b - a) / M
+    dt = T / N
+    c = 1 / dx**2
+    x = np.linspace(a, b, M + 1)
+    t = np.linspace(0, T, N + 1)
+    V = Vdef(x)
+
+    # A psi^{n+1} = B psi^n   avec  A = I + i dt/2 H ,  B = I - i dt/2 H
+    # ligne j de H : [-c/2, c + V_j, -c/2]
+    A = np.zeros([M + 1, M + 1], dtype=complex)
+    B = np.zeros([M + 1, M + 1], dtype=complex)
+    A[0, 0] = 1; A[M, M] = 1                 # bords : psi = 0
+    for j in range(1, M):
+        H_ligne = np.array([-c / 2, c + V[j], -c / 2])
+        A[j, [j - 1, j, j + 1]] = (1j * dt / 2) * H_ligne
+        B[j, [j - 1, j, j + 1]] = -(1j * dt / 2) * H_ligne
+        A[j, j] += 1
+        B[j, j] += 1
+    U = np.linalg.solve(A, B)                # matrice d'évolution, calculée une fois
+
+    psi = np.asarray(psi0def(x), dtype=complex).copy()
+    psi[0] = psi[M] = 0
+    psi_num = np.zeros([M + 1, N + 1], dtype=complex)
+    psi_num[:, 0] = psi
+    for n in range(N):
+        psi = U @ psi
+        psi_num[:, n + 1] = psi
+    return x, t, psi_num
+
+def evolution_semi_implicite(a, b, M, N, T, Vdef, psi0def):
+    """Semi-implicite comme dans DF3 :  Og psi^{n+1} = Od psi^n + dt NL^n ,
+    avec NL^n = -i V psi^n (Euler explicite).  Vdef(x) : potentiel stationnaire
+    (pour un V(x,t), remplacer Vdef(x) par Vdef(x, t[n]) dans la boucle).
+    Enregistre TOUS les pas : renvoie x (M+1), t (N+1), psi (M+1, N+1)."""
+    dx = (b - a) / M
+    dt = T / N
+    r = 1j * dt / (4 * dx**2)
+    x = np.linspace(a, b, M + 1)
+    t = np.linspace(0, T, N + 1)
+
+    #matrices Og et Od (COMPLEXES), construites comme dans DF3
+    Og = np.zeros([M + 1, M + 1], dtype=complex)
+    Od = np.zeros([M + 1, M + 1], dtype=complex)
+    Og[0, 0] = 1                     # bords : psi = 0
+    Og[M, M] = 1
+    for j in range(1, M):            # j de 1 à M-1
+        Og[j, [j - 1, j, j + 1]] = [-r, 1 + 2 * r, -r]
+        Od[j, [j - 1, j, j + 1]] = [r, 1 - 2 * r, r]
+
+    #initialisation
+    psi = psi0def(x).astype(complex)
+    psi_num = np.zeros([M + 1, N + 1], dtype=complex)
+    psi_num[:, 0] = psi
+
+    #boucle d'avancement temporel
+    for n in range(N):               # pour n allant de 0 à N-1
+
+        #terme explicite (le potentiel) à l'instant t_n
+        NL = -1j * Vdef(x) * psi
+        NL[0] = NL[M] = 0
+
+        #mise à jour : on résout le système linéaire  Og psi = Od psi + dt NL
+        psi = np.linalg.solve(Og, np.dot(Od, psi) + dt * NL)
+
+        #enregistrer
+        psi_num[:, n + 1] = psi
+
+        #test d'instabilité numérique
+        if np.max(np.abs(psi)) > 1e6:
+            print('Instabilité numérique: boum au pas ' + str(n))
+            break
+    return x, t, psi_num
+
+solveurs = {'explicite': evolution_explicite, 'implicite': evolution_implicite,
+            'semi-implicite': evolution_semi_implicite}
+
+#%% 9. Cas 6.1.1 : validation, puits de potentiel infiniment profond
+####################################################################
+# Unités naturelles avec L* = L : domaine [0,1], V = 0 à l'intérieur
+# (les murs infinis sont imposés par psi(0,t) = psi(1,t) = 0).
+# Condition initiale : paquet parabolique normalisé  psi0 = sqrt(30) x (1-x).
+def V_puit_infini(x):
+    """Renvoie un vecteur de la taille de x contenant des zéros."""
+    return np.zeros_like(x)
+
+def psi0(x):
+    """Condition initiale sur les points du maillage."""
+    return np.sqrt(30) * x * (1 - x)
+
+a, b, M, T = 0.0, 1.0, 100, 1.0
+N_expl = 10000        # RK4 explicite : dt = 1e-4   (dt*(2/dx²) = 2 < 2.8)
+N_impl = 100          # Crank-Nicolson implicite : dt = 0.01
+N_semi = 100          # semi-implicite DF3 : dt = 0.01
+
+#%% 10. Simulations explicite, implicite et semi-implicite + vérifications
+##########################################################################
+t0 = time.time()
+x, t_e, psi_e = evolution_explicite(a, b, M, N_expl, T, V_puit_infini, psi0)
+duree_e = time.time() - t0
+t0 = time.time()
+x, t_i, psi_i = evolution_implicite(a, b, M, N_impl, T, V_puit_infini, psi0)
+duree_i = time.time() - t0
+t0 = time.time()
+x, t_s, psi_s = evolution_semi_implicite(a, b, M, N_semi, T, V_puit_infini, psi0)
+duree_s = time.time() - t0
+dx = x[1] - x[0]
+
+# solution exacte : psi = somme_n c_n phi_n exp(-i E_n t),
+#   phi_n = sqrt(2) sin(n pi x),  E_n = (n pi)²/2,
+#   c_n = <phi_n|psi0> = sqrt(60) * 4/(n pi)³  pour n impair, 0 pour n pair
+def psi_exacte(x, t):
+    psi = np.zeros([len(x), len(t)], dtype=complex)
+    for n in range(1, 200, 2):
+        cn = np.sqrt(60) * 4 / (n * np.pi)**3
+        psi += cn * np.sqrt(2) * np.outer(np.sin(n * np.pi * x),
+                                          np.exp(-1j * (n * np.pi)**2 / 2 * t))
+    return psi
+
+# chaque schéma est comparé à la solution exacte sur SA propre grille de temps
+norme_e = np.sum(np.abs(psi_e)**2, axis=0) * dx
+norme_i = np.sum(np.abs(psi_i)**2, axis=0) * dx
+norme_s = np.sum(np.abs(psi_s)**2, axis=0) * dx
+err_e = np.max(np.abs(psi_e - psi_exacte(x, t_e)), axis=0)   # erreur max sur x à chaque t
+err_i = np.max(np.abs(psi_i - psi_exacte(x, t_i)), axis=0)
+err_s = np.max(np.abs(psi_s - psi_exacte(x, t_s)), axis=0)
+
+# pour comparer explicite et implicite, on prend l'explicite aux instants de l'implicite
+pas = N_expl // N_impl
+ecart_ei = np.max(np.abs(psi_e[:, ::pas] - psi_i))
+ecart_si = np.max(np.abs(psi_s - psi_i))
+
+print("Cas 6.1.1 : puits infini, M = 100, T = 1")
+print(f"  explicite (RK4, N={N_expl}, dt={T/N_expl:.0e}) : {duree_e:.2f} s, "
+      f"norme in [{norme_e.min():.6f}, {norme_e.max():.6f}], erreur max / exact = {err_e.max():.2e}")
+print(f"  implicite (CN,  N={N_impl}, dt={T/N_impl:.0e}) : {duree_i:.2f} s, "
+      f"norme in [{norme_i.min():.6f}, {norme_i.max():.6f}], erreur max / exact = {err_i.max():.2e}")
+print(f"  semi-impl (DF3, N={N_semi}, dt={T/N_semi:.0e}) : {duree_s:.2f} s, "
+      f"norme in [{norme_s.min():.6f}, {norme_s.max():.6f}], erreur max / exact = {err_s.max():.2e}")
+print(f"  écart max explicite - implicite      : {ecart_ei:.2e}")
+print(f"  écart max semi-implicite - implicite : {ecart_si:.2e}"
+      f"   (V = 0 => NL = 0 : mêmes équations que Crank-Nicolson)")
+
+fig, ax = plt.subplots(1, 2, figsize=(13, 4.5))
+n_e, n_i, n_s = N_expl // 4, N_impl // 4, N_semi // 4        # instant t = T/4
+ax[0].plot(x, np.real(psi_exacte(x, t_i[[n_i]])[:, 0]), 'r', lw=3, alpha=.4, label='exacte')
+ax[0].plot(x, np.real(psi_e[:, n_e]), 'k--', label='explicite RK4')
+ax[0].plot(x, np.real(psi_i[:, n_i]), 'b:', label='implicite CN')
+ax[0].plot(x, np.real(psi_s[:, n_s]), 'g.', ms=4, label='semi-implicite DF3')
+ax[0].set_title(f'Re psi à t = {t_i[n_i]:.2f}'); ax[0].set_xlabel('x'); ax[0].grid(); ax[0].legend()
+ax[1].semilogy(t_e[1:], err_e[1:], label='explicite RK4')
+ax[1].semilogy(t_i[1:], err_i[1:], label='implicite CN')
+ax[1].semilogy(t_s[1:], err_s[1:], 'g--', label='semi-implicite DF3')
+ax[1].set_title('Erreur max par rapport à la solution exacte'); ax[1].set_xlabel('t')
+ax[1].grid(); ax[1].legend()
+plt.show()
+
+#%% 11. Animation du paquet d'onde (corde de guitare tenue par les bords)
+#######################################################################
+schema_anim = 'implicite'         # 'explicite', 'implicite' ou 'semi-implicite'
+t_anim, psi_anim = {'explicite': (t_e, psi_e), 'implicite': (t_i, psi_i),
+                    'semi-implicite': (t_s, psi_s)}[schema_anim]
+saut = max(1, len(t_anim) // 100)         # on n'affiche qu'une image sur 'saut'
+
+fig, axa = plt.subplots(figsize=(8, 4))
+l_re, = axa.plot(x, np.real(psi_anim[:, 0]), 'b', label='Re psi')
+l_im, = axa.plot(x, np.imag(psi_anim[:, 0]), 'r', label='Im psi')
+l_pr, = axa.plot(x, np.abs(psi_anim[:, 0])**2, 'k', label='|psi|²')
+axa.set_xlim(a, b); axa.set_ylim(-2.5, 2.5)           # axe y fixé
+axa.set_xlabel('x'); axa.grid(); axa.legend(loc='upper right')
+def maj(n):
+    l_re.set_ydata(np.real(psi_anim[:, n]))
+    l_im.set_ydata(np.imag(psi_anim[:, n]))
+    l_pr.set_ydata(np.abs(psi_anim[:, n])**2)
+    axa.set_title(f'puits infini, schéma {schema_anim} : t = {t_anim[n]:.2f}')
+    return l_re, l_im, l_pr
+ani = FuncAnimation(fig, maj, frames=range(0, len(t_anim), saut), interval=50)
+plt.show()
+
+#%% 12. (Optionnel) Tout tester d'un coup
+########################################
+print("\n=== Cas stationnaires ===")
+for nom, c_ in cas.items():
+    xx, EE, _ = etats_propres(c_['a'], c_['b'], c_['M'], c_['V'], c_['nb'])
+    if c_['E_ex'] is not None:
+        Eex = c_['E_ex'](c_['nb'])
+        err = np.max(np.abs(EE[:len(Eex)] - Eex) / np.abs(Eex))
+        print(f"{nom:14s} E0 = {EE[0]:9.5f}   erreur relative max = {err:.1e}")
+    else:
+        print(f"{nom:14s} E0 = {EE[0]:9.5f}   E1 = {EE[1]:9.5f}   (pas de solution exacte)")
+
+print("\n=== Cas instationnaire 6.1.1 : voir la cellule 10 ===")
