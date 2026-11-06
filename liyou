@@ -6,150 +6,90 @@ from matplotlib.animation import FuncAnimation
 from scipy.linalg import eigh
 from scipy.optimize import brentq
 
+#  Partie I:équation schrodinger stationnaire
+a, b = 0.0, 1.0
 
-#                     PARTIE I : PROBLEME STATIONNAIRE
-#%% 2. Solveur stationnaire (identique pour tous les potentiels)
+# résolution (nombre de pas d'espace)
+M = 200
 
-def etats_propres(a, b, M, Vdef, nb):
-    """Renvoie x (M+1 points), E (nb premières énergies), phi (M+1, nb)."""
-    dx = (b - a) / M
-    c = 1 / dx**2
-    x = np.linspace(a, b, M + 1)
-    V = Vdef(x)
-
-    # matrice H sur les M-1 points intérieurs (bords : phi = 0)
-    n = M - 1
-    H = np.zeros([n, n])
-    for k in range(n):
-        H[k, k] = c + V[k + 1]
-        if k > 0:
-            H[k, k - 1] = -c / 2
-        if k < n - 1:
-            H[k, k + 1] = -c / 2
-
-    # H est symétrique réelle : eigh renvoie déjà les valeurs triées
-    E, phi_int = eigh(H)
-    E = E[:nb]
-
-    phi = np.zeros([M + 1, nb])
-    phi[1:M, :] = phi_int[:, :nb]
-    for k in range(nb):
-        phi[:, k] /= np.sqrt(np.sum(phi[:, k]**2) * dx)       # normalisation
-        i0 = np.argmax(np.abs(phi[:, k]) > 1e-3 * np.abs(phi[:, k]).max())
-        if phi[i0, k] < 0:                                    # signe
-            phi[:, k] *= -1
-    return x, E, phi
-
-#%% 3. Les potentiels
-# --- 3.1 puits infini  (domaine [0,1])
-def V_puits_infini(x):
+# potentiel V(x) : ici puits infini (V = 0 dans [a,b])
+def Vdef(x):
     return np.zeros_like(x)
 
-# --- 3.2 oscillateur harmonique  V = x²/2     (E_n = n + 1/2)
-def V_oscillateur(x):
-    return 0.5 * x**2
+# nombre d'états propres à afficher
+nb = 4
 
-# --- 3.3 puits fini : V = 0 pour |x|<1, V0 ailleurs
-V0_puits, demi_largeur = 10.0, 1.0
-def V_puits_fini(x):
-    V = np.where(np.abs(x) < demi_largeur, 0.0, V0_puits)
-    # sur les points qui tombent exactement sur la marche : valeur moyenne
-    # (meilleure précision pour un potentiel discontinu)
-    V[np.isclose(np.abs(x), demi_largeur)] = V0_puits / 2
-    return V
+dx = (b - a) / M
+c = 1 / dx**2
+x = np.linspace(a, b, M + 1)        # M+1 points, bords inclus
+V = Vdef(x)
 
-# --- 3.4 double puits  V = (x²-4)²/8   (deux minima en x = ±2, barrière = 2)
-def V_double_puits(x):
-    return (x**2 - 4)**2 / 8
+#%% 3. La matrice H
+n = M - 1                          
+H = np.zeros([n, n])
 
-# --- 3.5 puits de Pöschl-Teller  V = -l(l+1)/(2 cosh²x),  l=3
-#         E_n = -(l-n)²/2  pour n = 0,1,2
-lam = 3
-def V_poschl_teller(x):
-    return -lam * (lam + 1) / (2 * np.cosh(x)**2)
+for k in range(n):                   # k = j-1, indice dans la matrice
+    H[k, k] = c + V[k + 1]
+    if k > 0:
+        H[k, k - 1] = -c / 2
+    if k < n - 1:
+        H[k, k + 1] = -c / 2
 
-# --- 3.6 potentiel de Morse  V = D (1 - exp(-alpha x))²   (vibration moléculaire)
-D_morse, alpha = 8.0, 1.0
-def V_morse(x):
-    return D_morse * (1 - np.exp(-alpha * x))**2
+#%% 4. Valeurs et vecteurs propres
+# eig résout H phi = E phi
+E, phi_int = eig(H)
+E = np.real(E)
 
-# --- 3.7 neutron dans le champ de gravité  V = z  (mur en z=0)
-def V_gravite(x):
-    return x.copy()
+# on trie par énergie croissante : E_0 <= E_1 <= E_2 ...
+ordre = np.argsort(E)
+E = E[ordre]
+phi_int = np.real(phi_int[:, ordre])
 
-#%% 4. Solutions exactes (pour vérifier ; None si on ne les connaît pas)
-def E_exact_puits_fini(nb):
-    # k = sqrt(2E), kappa = sqrt(2(V0-E)), demi-largeur l
-    #   pair   : kappa = k tan(k l)      impair : kappa = -k cot(k l)
-    l = demi_largeur
-    def f_pair(E):
-        k, ka = np.sqrt(2 * E), np.sqrt(2 * (V0_puits - E))
-        return ka - k * np.tan(k * l)
-    def f_impair(E):
-        k, ka = np.sqrt(2 * E), np.sqrt(2 * (V0_puits - E))
-        return ka + k / np.tan(k * l)
-    Eg = np.linspace(1e-6, V0_puits - 1e-6, 20000)
-    racines = []
-    for f in (f_pair, f_impair):
-        v = f(Eg)
-        for i in range(len(Eg) - 1):
-            if v[i] * v[i + 1] < 0 and abs(v[i]) < 50 and abs(v[i + 1]) < 50:
-                racines.append(brentq(f, Eg[i], Eg[i + 1]))
-    return np.sort(racines)[:nb]
+# on remet les points de bord (valeur 0) pour avoir des vecteurs de taille M+1
+phi = np.zeros([M + 1, n])
+phi[1:M, :] = phi_int
 
-# zéros de la fonction d'Airy : E_n = |a_n| / 2^(1/3)
-airy = np.array([2.33811, 4.08795, 5.52056, 6.78671, 7.94413, 9.02265])
+# normalisation :  <phi_n|phi_n> = somme phi_j² dx = 1
+for k in range(n):
+    phi[:, k] = phi[:, k] / np.sqrt(np.sum(phi[:, k]**2) * dx)
+    # convention de signe : première valeur non négligeable positive
+    i0 = np.argmax(np.abs(phi[:, k]) > 1e-8 * np.abs(phi[:, k]).max())
+    if phi[i0, k] < 0:
+        phi[:, k] = -phi[:, k]
 
-#%% 5. Paramètres de chaque cas : domaine [a,b], M, nb, potentiel, exact
-cas = {'puits_infini': dict(a=0,   b=1,   M=300, nb=4, V=V_puits_infini, E_ex=lambda nb: (np.arange(1, nb + 1) * np.pi)**2 / 2),
-    'oscillateur':  dict(a=-8,  b=8,   M=800, nb=5, V=V_oscillateur,  E_ex=lambda nb: np.arange(nb) + 0.5),
-    'puits_fini':   dict(a=-6,  b=6,   M=1200, nb=4, V=V_puits_fini,  E_ex=E_exact_puits_fini),
-    'double_puits': dict(a=-6,  b=6,   M=800, nb=6, V=V_double_puits, E_ex=None),
-    'poschl_teller':dict(a=-15, b=15,  M=1500, nb=3, V=V_poschl_teller,   E_ex=lambda nb: -(lam - np.arange(nb))**2 / 2),
-    'morse':        dict(a=-2,  b=10,  M=1200, nb=4, V=V_morse, E_ex=lambda nb: (lambda w, n: w * (n + .5) - (w * (n + .5))**2 / (4 * D_morse))(alpha * np.sqrt(2 * D_morse), np.arange(nb))),
-    'gravite':      dict(a=0,   b=30,  M=600, nb=5, V=V_gravite,      E_ex=lambda nb: airy[:nb] / 2**(1 / 3)),}
+#%% 5. Vérification : puits infini  (L=1)
+# solution exacte : E_n = (n+1)² pi² / 2 ,  phi_n = sqrt(2) sin((n+1) pi x)
+E_ex = (np.arange(1, nb + 1) * np.pi)**2 / 2
+print("n   E numérique    E exacte     erreur relative")
+for k in range(nb):
+    print(f"{k}   {E[k]:11.5f}   {E_ex[k]:11.5f}   {abs(E[k]-E_ex[k])/E_ex[k]:.2e}")
 
-#%% 6. Choisir un cas stationnaire, résoudre, comparer, tracer
-choix = 'double_puits'      # <-- changer ici : voir les clés du dictionnaire `cas`
+# orthonormalité : <phi_m|phi_n> = delta_mn
+G = phi[:, :nb].T @ phi[:, :nb] * dx
+print("\nmatrice de Gram (doit être l'identité) :\n", np.round(G, 6))
 
-p = cas[choix]
-x, E, phi = etats_propres(p['a'], p['b'], p['M'], p['V'], p['nb'])
-V = p['V'](x)
+#%% 6. Graphes : niveaux d'énergie + fonctions propres
+fig, ax = plt.subplots(1, 2, figsize=(12, 5))
 
-print(f"Cas : {choix}")
-if p['E_ex'] is not None:
-    E_ex = p['E_ex'](p['nb'])
-    print(" n   E numérique   E exacte    erreur relative")
-    for k in range(len(E_ex)):
-        print(f" {k}  {E[k]:11.5f}  {E_ex[k]:11.5f}   {abs(E[k]-E_ex[k])/abs(E_ex[k]):.2e}")
-else:
-    print(" n   E numérique")
-    for k in range(p['nb']):
-        print(f" {k}  {E[k]:11.5f}")
-
-nb = p['nb']
-amp = 0.8 * np.min(np.diff(E)) / np.abs(phi).max()    # amplitude d'affichage
-
-fig, ax = plt.subplots(1, 2, figsize=(13, 5))
+# fonctions propres, décalées verticalement de leur énergie
 ax[0].plot(x, V, 'k', lw=2, label='V(x)')
 for k in range(nb):
-    ax[0].axhline(E[k], color='gray', ls=':', lw=.8)
-    ax[0].plot(x, E[k] + amp * phi[:, k], label=f'n={k}, E={E[k]:.3f}')
-ax[0].set_ylim(V.min() - 0.5, E[-1] + 1.5 * np.min(np.diff(E)))
-ax[0].set_xlabel('x'); ax[0].set_ylabel('E'); ax[0].grid(); ax[0].legend(fontsize=8)
-ax[0].set_title(f'{choix} : niveaux et fonctions propres')
+    ax[0].axhline(E[k], color='gray', ls=':')
+    ax[0].plot(x, E[k] + 0.5 * phi[:, k] * (E[1] - E[0]) / phi[:, :nb].max(),
+               label=f'n={k},  E={E[k]:.3f}')
+ax[0].set_xlabel('x'); ax[0].set_ylabel('E'); ax[0].legend(); ax[0].grid()
+ax[0].set_title('Niveaux et fonctions propres')
 
+# densités de probabilité |phi_n|²
 for k in range(nb):
     ax[1].plot(x, phi[:, k]**2, label=f'n={k}')
-ax[1].set_xlabel('x'); ax[1].set_ylabel(r'$|\phi_n|^2$'); ax[1].grid(); ax[1].legend()
-ax[1].set_title('Densités de probabilité')
+ax[1].set_xlabel('x'); ax[1].set_ylabel(r'$|\phi_n|^2$')
+ax[1].legend(); ax[1].grid(); ax[1].set_title('Densités de probabilité')
 plt.show()
 
-##############################################################################
+
 #  PARTIE II : EVOLUTION TEMPORELLE (EXPLICITE RK4 / IMPLICITE CN / SEMI-IMPLICITE)
-##############################################################################
 #%% 8. Solveurs instationnaires : EXPLICITE, IMPLICITE et SEMI-IMPLICITE
-########################################################################
 
 def evolution_explicite(a, b, M, N, T, Vdef, psi0def, V_instationnaire=False):
     """RK4. Vdef(x) si stationnaire, Vdef(x,t) si V_instationnaire=True.
@@ -309,7 +249,6 @@ ax[0].set_title(f'Re psi à t = {t_i[n_i]:.2f}'); ax[0].set_xlabel('x'); ax[0].g
 plt.show()
 
 #%% 11. Animation du paquet d'onde (corde de guitare tenue par les bords)
-#######################################################################
 schema_anim = 'implicite'         # 'explicite', 'implicite' ou 'semi-implicite'
 t_anim, psi_anim = {'explicite': (t_e, psi_e), 'implicite': (t_i, psi_i),
                     'semi-implicite': (t_s, psi_s)}[schema_anim]
@@ -331,11 +270,9 @@ ani = FuncAnimation(fig, maj, frames=range(0, len(t_anim), saut), interval=50)
 plt.show()
 
 
-##############################################################################
 #        PARTIE IV : REBONDS QUANTIQUES DE NEUTRONS (section 7 du projet)
 
 #%% 13. Question 2 : le paquet d'onde initial
-############################################
 z0 = 10.0                   # hauteur initiale (0 << z0 << D)
 d = 1.0                     # largeur (d <~ 1 pour localiser, pas trop petit : résolution)
 D = 40.0                    # hauteur du domaine (plusieurs dizaines)
