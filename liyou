@@ -224,10 +224,6 @@ def evolution_implicite(a, b, M, N, T, Vdef, psi0def):
     return x, t, psi_num
 
 def evolution_semi_implicite(a, b, M, N, T, Vdef, psi0def):
-    """Semi-implicite comme dans DF3 :  Og psi^{n+1} = Od psi^n + dt NL^n ,
-    avec NL^n = -i V psi^n (Euler explicite).  Vdef(x) : potentiel stationnaire
-    (pour un V(x,t), remplacer Vdef(x) par Vdef(x, t[n]) dans la boucle).
-    Enregistre TOUS les pas : renvoie x (M+1), t (N+1), psi (M+1, N+1)."""
     dx = (b - a) / M
     dt = T / N
     r = 1j * dt / (4 * dx**2)
