@@ -362,14 +362,7 @@ U0 = np.real(np.sum(np.conj(p0) * (-1j) * np.gradient(p0, dz_t)) * dz_t)
 t_chute = np.sqrt(2 * z0)
 n_rebonds = 3
 T_n = n_rebonds * 2 * t_chute          # une période de rebond = 2 * t_chute
- 
-print("Question 2 : paquet d'onde initial")
-print(f"  C = pi^(-1/4) d^(-1/2) = {C:.5f}   -> norme numérique = {norme0:.6f}")
-print(f"  <z>(0) = {z_moy0:.4f} (z0 = {z0}),  psi0(0) = {psi0_neutron(np.array([0.0]))[0]:.1e},"
-      f"  psi0(D) = {psi0_neutron(np.array([D]))[0]:.1e}")
-print(f"  U0 = <psi0|p|psi0> = {U0:.1e}  (= 0 : départ du repos)")
-print(f"  temps de chute = sqrt(2 z0) = {t_chute:.3f} ;  durée T = {n_rebonds} périodes = {T_n:.2f}")
- 
+
 fig, ax = plt.subplots(figsize=(4.5, 6))
 ax.plot(np.abs(p0)**2, z_t, 'b', label=r'$|\psi_0|^2$')
 ax.plot(z_t / D * np.max(np.abs(p0)**2), z_t, 'k--', lw=.8, label='V(z) = z (échelle réduite)')
@@ -388,12 +381,6 @@ duree = time.time() - t0
 dz = z[1] - z[0]
 rho_n = np.abs(psi_n)**2
 norme_n = np.sum(rho_n, axis=0) * dz
- 
-print("\nQuestion 3 : simulation (implicite)")
-print(f"  M = {M_n} (dz = {dz:.3f}), N = {N_n} (dt = {T_n/N_n:.4f}), T = {T_n:.2f}, {duree:.1f} s")
-print(f"  norme min / max = {norme_n.min():.6f} / {norme_n.max():.6f}")
-print(f"  |psi| max sur les bords : {np.abs(psi_n[[0, -1], :]).max():.1e}  "
-      f"(plus grand |psi| dans la dernière maille : {np.abs(psi_n[-2, :]).max():.1e})")
  
 # diagramme espace-temps de |psi|² (aperçu rapide ; l'animation est la question 4)
 plt.figure(figsize=(9, 4.5))
