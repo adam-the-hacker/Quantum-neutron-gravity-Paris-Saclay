@@ -1,7 +1,3 @@
-#%% 1. ENTREES ET LIBRAIRIES
-# Equation de Schrödinger adimensionnée (hbar = m = 1) par différences finies :
-#       E phi = -1/2 phi'' + V phi            (stationnaire)
-#       i dpsi/dt = -1/2 psi'' + V psi        (instationnaire : RK4 explicite / CN implicite / semi-implicite DF3)
 
 import time
 import numpy as np
