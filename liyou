@@ -160,12 +160,6 @@ def evolution_explicite(a, b, M, N, T, Vdef, psi0def, V_instationnaire=False):
     t = np.linspace(0, T, N + 1)
     V = None if V_instationnaire else Vdef(x)
 
-    # condition de stabilité de RK4
-    V_max = np.max(np.abs(Vdef(x, 0.0) if V_instationnaire else V))
-    if dt * (2 / dx**2 + V_max) > 2.8:
-        print(f"ATTENTION : dt*(2/dx²+Vmax) = {dt*(2/dx**2+V_max):.2f} > 2.8 : "
-              f"schéma explicite instable, augmenter N")
-
     def F(u, tt):                      # F = -i H u  (points intérieurs seulement)
         Vt = Vdef(x, tt) if V_instationnaire else V
         out = np.zeros_like(u)
@@ -367,8 +361,11 @@ fig, ax = plt.subplots(figsize=(4.5, 6))
 ax.plot(np.abs(p0)**2, z_t, 'b', label=r'$|\psi_0|^2$')
 ax.plot(z_t / D * np.max(np.abs(p0)**2), z_t, 'k--', lw=.8, label='V(z) = z (échelle réduite)')
 ax.axhline(0, color='brown', lw=3)                    # miroir en z = 0
-ax.set_ylim(-1, D); ax.set_xlabel(r'$|\psi_0|^2$'); ax.set_ylabel('z'); ax.grid(alpha=.3)
-ax.set_title(f'Paquet initial : z0 = {z0}, d = {d}'); ax.legend()
+ax.set_ylim(-1, D)
+ax.set_xlabel(r'$|\psi_0|^2$')
+ax.set_ylabel('z'); ax.grid(alpha=.3)
+ax.set_title(f'Paquet initial : z0 = {z0}, d = {d}')
+ax.legend()
 plt.show()
  
 #%% 14. Question 3 : simulation instationnaire (schéma implicite)
@@ -385,6 +382,9 @@ norme_n = np.sum(rho_n, axis=0) * dz
 # diagramme espace-temps de |psi|² (aperçu rapide ; l'animation est la question 4)
 plt.figure(figsize=(9, 4.5))
 plt.imshow(rho_n, origin='lower', aspect='auto', extent=[0, T_n, 0, D], cmap='viridis', vmax=0.6)
-plt.ylim(0, 20); plt.xlabel('t'); plt.ylabel('z'); plt.colorbar(label=r'$|\psi|^2$')
+plt.ylim(0, 20)
+plt.xlabel('t')
+plt.ylabel('z')
+plt.colorbar(label=r'$|\psi|^2$')
 plt.title('Neutron en chute libre avec rebonds sur le miroir')
 plt.show()
