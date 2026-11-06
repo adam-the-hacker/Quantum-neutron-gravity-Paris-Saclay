@@ -46,7 +46,7 @@ def update(frame):
     ax.set_title(f"Puits infini : t = {t_imp[frame]:.2f}")
     return ligne,
 
-ani = FuncAnimation(fig, update, frames=len(t_imp), interval=30, blit=True)
+ani = FuncAnimation(fig, update, frames=len(t_imp), interval=30, blit=False)
 plt.show()
 
 
@@ -96,7 +96,7 @@ def update(frame):
     ax.set_title(f"Rebonds du Neutron : t = {t[frame]:.2f}")
     return ligne,
 
-ani = FuncAnimation(fig, update, frames=len(t), interval=30, blit=True)
+ani = FuncAnimation(fig, update, frames=len(t), interval=30, blit=False)
 plt.show()
 
 
