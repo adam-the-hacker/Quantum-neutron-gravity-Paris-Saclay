@@ -11,11 +11,6 @@ $$
 i \partial_t \psi = -\frac{1}{2} \partial_{zz} \psi + V(z)\psi
 $$
 
-Characteristic physical scales:
-* Length scale: $L_* = (\hbar^2 / m^2 g)^{1/3} \approx 5.87 \ \mu\text{m}$
-* Time scale: $T_* = (m\hbar / g^2)^{1/3} \approx 1.09 \text{ ms}$
-* Energy scale: $E_* = (m g^2 \hbar^2)^{1/3} \approx 0.60 \text{ peV}$
-
 Boundary conditions: homogeneous Dirichlet $\psi(a, t) = \psi(b, t) = 0$.
 
 ## 2. Numerical Schemes
