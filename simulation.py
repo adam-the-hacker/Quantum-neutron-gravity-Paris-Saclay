@@ -48,7 +48,7 @@ def update(frame):
     return ligne,
 
 ani = FuncAnimation(fig, update, frames=len(t_imp), interval=30, blit=False)
-ani.save('puits_inf.gif', writer='pillow', fps=30)
+ani.save('puits_inf.mp4')
 plt.show()
 
 ''' Simulation B : Neutron '''
@@ -99,7 +99,7 @@ def update(frame):
     return ligne,
 
 ani = FuncAnimation(fig, update, frames=len(t), interval=30, blit=False)
-ani.save('neutron.gif', writer='pillow', fps=30)
+ani.save('neutron.mp4')
 plt.show()
 
 
@@ -107,8 +107,12 @@ plt.show()
 """ Comparaison avec le rebond classique """
 def rebond_classique(t, z0, g=1.0):
     tau = np.sqrt(2 * z0 / g)
-    s = np.mod(t + tau, 2 * tau) - tau
-    return z0 - 0.5 * g * s**2
+    t_p = np.mod(t, 2 * tau)
+    # np.where s'agit d'un if/else vectorisé : np.where(condition, si vrai, si faux)
+    # temps ramené sur une période [0, 2*tau[
+    return np.where(t_p <= tau,
+                    z0 - 0.5 * g * t_p**2,               # descente
+                    z0 - 0.5 * g * (2 * tau - t_p)**2)   # remontée
 
 plt.figure(figsize=(10, 5))
 plt.plot(t, moy_z, 'b-', lw=2, label=r"Quantique $\langle z \rangle(t)$")
